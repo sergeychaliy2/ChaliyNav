@@ -1,0 +1,36 @@
+Proprietary Software License
+ChaliyNav — Premium Field Navigation
+
+Copyright (c) 2026 Sergey Chaliy. All rights reserved.
+
+================================================================================
+
+This software, including its source code and assets (the "Software"), is the
+proprietary and confidential property of the copyright holder.
+
+NO PERMISSION is granted to any person to use, copy, modify, merge, publish,
+distribute, sublicense, sell, or otherwise exploit the Software, in whole or in
+part, in any form or by any means, without the prior express written permission
+of the copyright holder.
+
+Unauthorized copying, distribution, modification, public display, or use of this
+Software, via any medium, is strictly prohibited.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Third-party components and data
+
+This project depends on third-party Flutter/Dart packages, each retaining its
+own license. Map tiles and presets are served by their respective providers
+(OpenStreetMap, Esri, OpenTopoMap, CartoDB, OpenSeaMap, EMODnet, OpenWeatherMap,
+historical map sources, etc.) under their own terms — the user is responsible
+for complying with each provider's usage policy. These terms apply to the
+respective components/data only and grant no rights to the rest of this Software.
+
+For licensing inquiries, contact: chalyjsm@gmail.com

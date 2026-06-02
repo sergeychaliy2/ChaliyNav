@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon foreground: compass needle in a glowing green core.
+     Outer 18dp of a 108dp adaptive icon is reserved for launcher masking,
+     so visible content stays inside the central ~72dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glowing green core disc -->
+    <path
+        android:pathData="M54,54 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z"
+        android:fillColor="#2ECC71"/>
+
+    <!-- Bright inner highlight -->
+    <path
+        android:pathData="M54,54 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z"
+        android:fillColor="#4ADE80"
+        android:fillAlpha="0.55"/>
+
+    <!-- White rim -->
+    <path
+        android:pathData="M54,54 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.4"
+        android:fillColor="#00000000"/>
+
+    <!-- Compass needle: south half white, north half red-pink -->
+    <path
+        android:pathData="M54,38 L60,54 L54,70 L48,54 Z"
+        android:fillColor="#FFFFFF"/>
+    <path
+        android:pathData="M54,38 L60,54 L48,54 Z"
+        android:fillColor="#FB7185"/>
+
+    <!-- Center pin -->
+    <path
+        android:pathData="M54,54 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 Z"
+        android:fillColor="#0A1410"/>
+</vector>
