@@ -17,6 +17,7 @@ import '../../../core/widgets/glass_card.dart';
 import '../../../shared/models/map_layer.dart';
 import '../../../shared/providers/layers_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
+import '../../../shared/services/cached_tile_provider.dart';
 import '../../../shared/services/raster_importer.dart';
 import '../../../shared/services/world_file.dart';
 import '../widgets/sharp_overlay_image_layer.dart';
@@ -772,6 +773,10 @@ class _GeoreferenceScreenState extends ConsumerState<GeoreferenceScreen> {
                   key: ValueKey('georef_base_${_baseStyle.name}'),
                   urlTemplate: _baseStyle.tileUrl,
                   userAgentPackageName: 'com.chaliy.nav',
+                  // Shared persistent cache — reuses tiles the main map
+                  // already stored and works offline here too.
+                  tileProvider:
+                      CachedTileProvider(sourceKey: _baseStyle.tileUrl),
                 ),
                 if (_sourcePath != null && corners != null)
                   // Custom overlay layer — the stock flutter_map

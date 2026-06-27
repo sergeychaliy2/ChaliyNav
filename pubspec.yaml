@@ -76,6 +76,7 @@ dependencies:
   uuid: ^4.5.1
   intl: ^0.20.1
   collection: ^1.18.0
+  path: ^1.9.0
 
   # Security
   local_auth: ^2.3.0

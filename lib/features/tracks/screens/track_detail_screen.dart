@@ -16,6 +16,7 @@ import '../../../shared/models/track.dart';
 import '../../../shared/providers/map_focus_provider.dart';
 import '../../../shared/providers/tracks_provider.dart';
 import '../../../shared/providers/visible_tracks_provider.dart';
+import '../../../shared/services/cached_tile_provider.dart';
 import '../../../shared/services/gpx_service.dart';
 
 /// Detail view for a saved track — mini preview map, stats, actions.
@@ -108,6 +109,12 @@ class TrackDetailScreen extends ConsumerWidget {
                         urlTemplate:
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.chaliy.nav',
+                        // Shares the base-map disk cache (same OSM URL),
+                        // so this preview also works offline.
+                        tileProvider: CachedTileProvider(
+                          sourceKey:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        ),
                       ),
                       if (latLngs.length >= 2) ...[
                         // Soft glow.

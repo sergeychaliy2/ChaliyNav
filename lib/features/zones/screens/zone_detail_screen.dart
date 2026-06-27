@@ -15,6 +15,7 @@ import '../../../shared/providers/map_focus_provider.dart';
 import '../../../shared/providers/measure_provider.dart' hide MeasureMode;
 import '../../../shared/providers/measure_provider.dart' as mp;
 import '../../../shared/providers/zones_provider.dart';
+import '../../../shared/services/cached_tile_provider.dart';
 
 /// Detail view for a saved zone: preview map, per-vertex list, controls.
 class ZoneDetailScreen extends ConsumerWidget {
@@ -99,6 +100,12 @@ class ZoneDetailScreen extends ConsumerWidget {
                         urlTemplate:
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.chaliy.nav',
+                        // Shares the base-map disk cache (same OSM URL),
+                        // so this preview also works offline.
+                        tileProvider: CachedTileProvider(
+                          sourceKey:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        ),
                       ),
                       if (zone.kind == ZoneKind.area &&
                           zone.vertices.length >= 3)

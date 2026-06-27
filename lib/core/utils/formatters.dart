@@ -45,4 +45,17 @@ class Formatters {
   /// "±5 м"
   static String accuracy(double? m) =>
       m == null ? '—' : '±${m.toStringAsFixed(0)} м';
+
+  /// "0 Б" / "812 КБ" / "42.5 МБ" / "1.7 ГБ" — human-readable byte size.
+  static String bytes(int b) {
+    if (b < 1024) return '$b Б';
+    const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
+    var value = b / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return '${value.toStringAsFixed(value < 10 ? 1 : 0)} ${units[unit]}';
+  }
 }

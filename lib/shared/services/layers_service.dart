@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/map_layer.dart';
+import 'cached_tile_provider.dart';
 
 /// Resolves a MapLayer into a runtime TileProvider usable by flutter_map.
 /// Handles XYZ URLs (network) and MBTiles (local file).
@@ -32,6 +33,9 @@ class LayersService {
         return TileLayer(
           urlTemplate: layer.source,
           userAgentPackageName: 'com.chaliy.nav',
+          // Same persistent disk cache as the base map — online XYZ
+          // overlays the user adds also keep working offline once browsed.
+          tileProvider: CachedTileProvider(sourceKey: layer.source),
           maxNativeZoom: layer.maxZoom.round(),
         );
 

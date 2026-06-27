@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -29,7 +30,9 @@ import '../../../shared/providers/points_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
 import '../../../shared/providers/tracks_provider.dart';
 import '../../../shared/services/background_tracking_service.dart';
+import '../../../shared/services/cached_tile_provider.dart';
 import '../../../shared/services/compass_service.dart';
+import '../../../shared/services/tile_prefetcher.dart';
 import '../../../shared/services/shake_detector.dart';
 import '../../../shared/services/tts_service.dart';
 import '../../points/widgets/poi_marker.dart';
@@ -41,6 +44,7 @@ import '../widgets/map_hud.dart';
 import 'compass_screen.dart';
 import '../widgets/measure_overlay.dart';
 import '../widgets/navigation_hud.dart';
+import '../widgets/prefetch_mini_indicator.dart';
 import '../widgets/quick_layers_bar.dart';
 import '../widgets/scale_bar.dart';
 import '../widgets/tracks_map_layer.dart';
@@ -104,6 +108,103 @@ class _MapScreenState extends ConsumerState<MapScreen>
   /// can't move() the camera before the first FlutterMap.build().
   LatLng? _pendingRestoreCenter;
   double? _pendingRestoreZoom;
+
+  /// Persistent-caching tile provider for the base map, memoised per
+  /// [BaseMapStyle]. Recreated only when the user switches base style —
+  /// the map screen rebuilds many times a second (location + 1 Hz tick),
+  /// and minting a fresh provider (and HTTP client) on every build would
+  /// churn connections needlessly. Disposed when the style changes or the
+  /// screen is torn down.
+  CachedTileProvider? _baseProvider;
+  BaseMapStyle? _baseProviderStyle;
+
+  /// Return the cached base-map tile provider for [style], (re)building it
+  /// only when the style actually changed. Every tile it serves is written
+  /// to disk so areas browsed online stay visible offline.
+  /// Debounce for the "save what I'm looking at" prefetch — fires once the
+  /// camera has been still for [_prefetchIdle]. While the user pans/zooms
+  /// (or follow-me keeps re-centring on GPS) the timer keeps resetting, so
+  /// we never prefetch mid-movement, only after the map settles.
+  Timer? _prefetchTimer;
+  static const _prefetchIdle = Duration(milliseconds: 1500);
+
+  /// Centre of the area we last kicked a prefetch for — used to skip
+  /// re-firing while effectively parked in one spot.
+  LatLng? _lastPrefetchCenter;
+
+  CachedTileProvider _baseTileProviderFor(BaseMapStyle style) {
+    final existing = _baseProvider;
+    if (existing != null && _baseProviderStyle == style) return existing;
+    // No dispose of the old one needed: CachedTileProvider owns no
+    // per-instance resources — its HTTP client is shared and long-lived —
+    // so a superseded provider is simply garbage-collected.
+    final provider = CachedTileProvider(sourceKey: style.tileUrl);
+    _baseProvider = provider;
+    _baseProviderStyle = style;
+    return provider;
+  }
+
+  /// (Re)arm the idle timer. Called on every camera event; the prefetch
+  /// only runs once movement has actually stopped.
+  void _schedulePrefetch() {
+    _prefetchTimer?.cancel();
+    _prefetchTimer = Timer(_prefetchIdle, _runPrefetchIfNeeded);
+  }
+
+  /// Once the map has settled, download the visible area across the user's
+  /// configured zoom range into the persistent cache — so zooming in here
+  /// offline later is sharp, not an upscale. Honors the master toggle, the
+  /// Wi-Fi-only guard, and a small stationary-dedupe.
+  Future<void> _runPrefetchIfNeeded() async {
+    if (!mounted) return;
+    final s = ref.read(settingsProvider).valueOrNull;
+    if (s == null || !s.tilePrefetchEnabled) return;
+
+    // Which base styles to save offline (map / satellite / hybrid / …).
+    // Deduped to URL templates — satellite & hybrid share one endpoint.
+    final sources = s.tilePrefetchStyles.map((e) => e.tileUrl).toSet().toList();
+    if (sources.isEmpty) return;
+
+    final LatLng center;
+    final LatLngBounds bounds;
+    try {
+      center = _map.camera.center;
+      bounds = _map.camera.visibleBounds;
+    } catch (_) {
+      return; // camera not ready yet
+    }
+
+    // Skip if we're basically where we last prefetched (parked / tiny pan).
+    final last = _lastPrefetchCenter;
+    if (last != null &&
+        const Distance().as(LengthUnit.Meter, last, center) < 60) {
+      return;
+    }
+
+    // Wi-Fi-only guard: never spend mobile data unless the user opted in.
+    if (s.tilePrefetchWifiOnly) {
+      try {
+        final conn = await Connectivity().checkConnectivity();
+        final onFreeLink = conn.contains(ConnectivityResult.wifi) ||
+            conn.contains(ConnectivityResult.ethernet);
+        if (!onFreeLink) return;
+      } catch (_) {
+        return; // can't tell → err on the safe side
+      }
+      if (!mounted) return;
+    }
+
+    _lastPrefetchCenter = center;
+    ref.read(tilePrefetchProvider.notifier).request(
+          sources: sources,
+          north: bounds.north,
+          south: bounds.south,
+          west: bounds.west,
+          east: bounds.east,
+          minZoom: s.tilePrefetchMinZoom,
+          maxZoom: s.tilePrefetchMaxZoom,
+        );
+  }
 
   @override
   void initState() {
@@ -180,6 +281,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _tts.dispose();
     _navTtsTimer?.cancel();
     _uiRefreshTimer?.cancel();
+    _prefetchTimer?.cancel();
     super.dispose();
   }
 
@@ -757,13 +859,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 // doesn't open at Moscow-default when their offline pack
                 // covers e.g. Voronezh.
                 _savePositionDebounced();
+                // Arm the "save what I'm looking at" prefetch — runs only
+                // after the camera settles (see _schedulePrefetch).
+                _schedulePrefetch();
               },
             ),
             children: [
               TileLayer(
                 urlTemplate: baseStyle.tileUrl,
                 userAgentPackageName: 'com.chaliy.nav',
-                tileProvider: NetworkTileProvider(),
+                // Persistent disk cache: tiles browsed online are stored
+                // forever, so the base map keeps working offline for any
+                // area the user has already visited.
+                tileProvider: _baseTileProviderFor(baseStyle),
                 maxNativeZoom: 19,
               ),
               // Stacked user layers (XYZ URL, MBTiles) with per-layer opacity.
@@ -955,6 +1063,14 @@ class _MapScreenState extends ConsumerState<MapScreen>
             left: 12,
             bottom: MediaQuery.of(context).padding.bottom + 48,
             child: const DownloadMiniIndicator(),
+          ),
+
+          // Tile-prefetch indicator — shows while the visible area is being
+          // saved to the offline cache. Parked just above the download pill.
+          Positioned(
+            left: 12,
+            bottom: MediaQuery.of(context).padding.bottom + 84,
+            child: const PrefetchMiniIndicator(),
           ),
 
           // Active layer opacity slider — left edge, vertical.

@@ -6,11 +6,14 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/glass_app_bar.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../shared/models/app_settings.dart';
+import '../../../shared/models/map_layer.dart';
 import '../../../shared/providers/locale_provider.dart';
 import '../../../shared/providers/settings_provider.dart';
+import '../../../shared/services/tile_cache_store.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -324,6 +327,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
+          const _MapCacheSection(),
           _LocaleSection(),
           _Section(
             icon: PhosphorIconsDuotone.question,
@@ -483,6 +487,424 @@ class _LocaleSection extends ConsumerWidget {
                 fontSize: 10.5,
                 height: 1.4,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Map-tile cache: auto-prefetch controls (download the area you're
+/// looking at across a zoom range) plus on-device size and a clear button.
+/// Stateful so it can show the live cache size and refresh after a wipe.
+class _MapCacheSection extends ConsumerStatefulWidget {
+  const _MapCacheSection();
+
+  @override
+  ConsumerState<_MapCacheSection> createState() => _MapCacheSectionState();
+}
+
+class _MapCacheSectionState extends ConsumerState<_MapCacheSection> {
+  int? _bytes;
+  int? _tiles;
+  bool _clearing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    final b = await TileCacheStore.instance.sizeBytes();
+    final t = await TileCacheStore.instance.count();
+    if (!mounted) return;
+    setState(() {
+      _bytes = b;
+      _tiles = t;
+    });
+  }
+
+  Future<void> _clear() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgSurface,
+        title: const Text('Очистить кеш карт?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'Будут удалены все автоматически сохранённые тайлы карт. '
+          'Скачанные офлайн-области (раздел «Загрузки») не затрагиваются.\n\n'
+          'Карты заново подгрузятся при наличии интернета.',
+          style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Отмена',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('Очистить', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _clearing = true);
+    await TileCacheStore.instance.clear();
+    await _loadStats();
+    if (!mounted) return;
+    setState(() => _clearing = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Кеш карт очищен')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(settingsProvider).valueOrNull ?? const AppSettings();
+    final n = ref.read(settingsProvider.notifier);
+    final sizeText = _bytes == null
+        ? 'Подсчёт…'
+        : '${Formatters.bytes(_bytes!)} · ${_tiles ?? 0} тайлов';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 6, bottom: 8),
+            child: Row(
+              children: [
+                Icon(PhosphorIconsDuotone.stack,
+                    color: AppColors.primaryGlow, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Кеш карт',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GlassCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                _Switch(
+                  icon: PhosphorIconsDuotone.cloudArrowDown,
+                  label: 'Подгружать детальные зумы',
+                  value: s.tilePrefetchEnabled,
+                  onChanged: (v) =>
+                      n.mutate((c) => c.copyWith(tilePrefetchEnabled: v)),
+                ),
+                if (s.tilePrefetchEnabled) ...[
+                  _StyleMultiSelect(
+                    selected: s.tilePrefetchStyles,
+                    onToggle: (style) {
+                      final next = {...s.tilePrefetchStyles};
+                      if (next.contains(style)) {
+                        next.remove(style);
+                      } else {
+                        next.add(style);
+                      }
+                      n.mutate((c) => c.copyWith(tilePrefetchStyles: next));
+                    },
+                  ),
+                  _ZoomRange(
+                    min: s.tilePrefetchMinZoom,
+                    max: s.tilePrefetchMaxZoom,
+                    onChanged: (lo, hi) => n.mutate(
+                      (c) => c.copyWith(
+                        tilePrefetchMinZoom: lo,
+                        tilePrefetchMaxZoom: hi,
+                      ),
+                    ),
+                  ),
+                  _Switch(
+                    icon: PhosphorIconsDuotone.wifiHigh,
+                    label: 'Только по Wi-Fi',
+                    value: s.tilePrefetchWifiOnly,
+                    onChanged: (v) =>
+                        n.mutate((c) => c.copyWith(tilePrefetchWifiOnly: v)),
+                  ),
+                ],
+                const Divider(height: 1, indent: 12, endIndent: 12),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIconsDuotone.database,
+                          color: AppColors.textSecondary, size: 18),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Сохранено на устройстве',
+                              style: TextStyle(
+                                  color: AppColors.textPrimary, fontSize: 14),
+                            ),
+                            Text(
+                              sizeText,
+                              style: TextStyle(
+                                color: AppColors.textTertiary,
+                                fontSize: 12,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed:
+                            (_clearing || (_bytes ?? 0) == 0) ? null : _clear,
+                        child: _clearing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2))
+                            : Text(
+                                'Очистить',
+                                style: TextStyle(
+                                  color: (_bytes ?? 0) == 0
+                                      ? AppColors.textTertiary
+                                      : AppColors.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 10, top: 6),
+            child: Text(
+              !s.tilePrefetchEnabled
+                  ? 'Просмотренные участки всё равно кешируются на тех зумах, '
+                      'что были на экране. Включите подгрузку, чтобы офлайн-'
+                      'приближение не было размытым.'
+                  : s.tilePrefetchStyles.isEmpty
+                      ? 'Не выбран ни один тип карт — подкачка ничего не '
+                          'сохраняет. Отметьте «Карту» и/или «Спутник» выше.'
+                      : 'Когда карта останавливается, видимый участок '
+                          'докачивается для выбранных типов карт на выбранных '
+                          'зумах и остаётся доступным без интернета. «Только по '
+                          'Wi-Fi» бережёт мобильный трафик — выключите его, '
+                          'чтобы качать всегда. Кеш не удаляется сам.',
+              style: TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 10.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Multi-select of which base-map styles to prefetch offline. Tapping a
+/// chip toggles it; an empty selection means nothing is prefetched (the
+/// live cache still keeps whatever style is on screen).
+class _StyleMultiSelect extends StatelessWidget {
+  const _StyleMultiSelect({required this.selected, required this.onToggle});
+
+  final Set<BaseMapStyle> selected;
+  final void Function(BaseMapStyle) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(PhosphorIconsDuotone.mapTrifold,
+                  color: AppColors.textSecondary, size: 18),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'Какие карты кешировать',
+                  style:
+                      TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final style in BaseMapStyle.values)
+                _StyleChip(
+                  label: style.label,
+                  selected: selected.contains(style),
+                  onTap: () => onToggle(style),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StyleChip extends StatelessWidget {
+  const _StyleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.22)
+              : AppColors.glassBorder.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(
+            color: selected
+                ? AppColors.primaryGlow
+                : AppColors.glassBorderStrong,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              Icon(PhosphorIconsBold.check,
+                  color: AppColors.primaryGlow, size: 13),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: selected
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dual-thumb zoom-range picker. Updates the label live while dragging and
+/// only persists on release (onChangeEnd) to avoid a prefs write per pixel.
+class _ZoomRange extends StatefulWidget {
+  const _ZoomRange({
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final int min;
+  final int max;
+  final void Function(int lo, int hi) onChanged;
+
+  @override
+  State<_ZoomRange> createState() => _ZoomRangeState();
+}
+
+class _ZoomRangeState extends State<_ZoomRange> {
+  late RangeValues _v;
+
+  @override
+  void initState() {
+    super.initState();
+    _v = RangeValues(widget.min.toDouble(), widget.max.toDouble());
+  }
+
+  @override
+  void didUpdateWidget(_ZoomRange old) {
+    super.didUpdateWidget(old);
+    if (old.min != widget.min || old.max != widget.max) {
+      _v = RangeValues(widget.min.toDouble(), widget.max.toDouble());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(PhosphorIconsDuotone.magnifyingGlassPlus,
+                  color: AppColors.textSecondary, size: 18),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'Диапазон зумов',
+                  style:
+                      TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                ),
+              ),
+              Text(
+                'z${_v.start.round()}–z${_v.end.round()}',
+                style: TextStyle(
+                  color: AppColors.primaryGlow,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.primaryGlow,
+              inactiveTrackColor: AppColors.glassBorderStrong,
+              thumbColor: Colors.white,
+              overlayColor: AppColors.primary.withValues(alpha: 0.2),
+              trackHeight: 3,
+            ),
+            child: RangeSlider(
+              values: _v,
+              min: 3,
+              max: 19,
+              divisions: 16,
+              labels: RangeLabels('z${_v.start.round()}', 'z${_v.end.round()}'),
+              onChanged: (rv) => setState(() => _v = rv),
+              onChangeEnd: (rv) =>
+                  widget.onChanged(rv.start.round(), rv.end.round()),
             ),
           ),
         ],
