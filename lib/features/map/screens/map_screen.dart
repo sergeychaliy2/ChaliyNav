@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -32,24 +31,25 @@ import '../../../shared/providers/tracks_provider.dart';
 import '../../../shared/services/background_tracking_service.dart';
 import '../../../shared/services/cached_tile_provider.dart';
 import '../../../shared/services/compass_service.dart';
-import '../../../shared/services/tile_prefetcher.dart';
 import '../../../shared/services/shake_detector.dart';
 import '../../../shared/services/tts_service.dart';
 import '../../points/widgets/poi_marker.dart';
 import '../widgets/active_layer_slider.dart';
 import '../widgets/animated_track_layer.dart';
+import '../widgets/area_download_indicator.dart';
+import '../widgets/cache_area_sheet.dart';
 import '../widgets/download_mini_indicator.dart';
 import '../widgets/layers_sheet.dart';
 import '../widgets/map_hud.dart';
 import 'compass_screen.dart';
 import '../widgets/measure_overlay.dart';
 import '../widgets/navigation_hud.dart';
-import '../widgets/prefetch_mini_indicator.dart';
 import '../widgets/quick_layers_bar.dart';
 import '../widgets/scale_bar.dart';
 import '../widgets/tracks_map_layer.dart';
 import '../widgets/user_layers_stack.dart';
 import '../widgets/user_marker.dart';
+import '../widgets/weather_map_layer.dart';
 import '../widgets/zones_map_layer.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
@@ -109,101 +109,58 @@ class _MapScreenState extends ConsumerState<MapScreen>
   LatLng? _pendingRestoreCenter;
   double? _pendingRestoreZoom;
 
-  /// Persistent-caching tile provider for the base map, memoised per
-  /// [BaseMapStyle]. Recreated only when the user switches base style —
-  /// the map screen rebuilds many times a second (location + 1 Hz tick),
-  /// and minting a fresh provider (and HTTP client) on every build would
-  /// churn connections needlessly. Disposed when the style changes or the
-  /// screen is torn down.
-  CachedTileProvider? _baseProvider;
-  BaseMapStyle? _baseProviderStyle;
+  /// Persistent-caching tile providers, memoised by source URL template.
+  /// The map screen rebuilds many times a second (location + 1 Hz tick);
+  /// minting a fresh provider on every build would hand each TileLayer a
+  /// new instance needlessly. One instance per source lives for the
+  /// screen's lifetime (it owns no per-instance resources — the HTTP
+  /// client is shared — so superseded entries just get GC'd).
+  final Map<String, CachedTileProvider> _tileProviders = {};
 
-  /// Return the cached base-map tile provider for [style], (re)building it
-  /// only when the style actually changed. Every tile it serves is written
-  /// to disk so areas browsed online stay visible offline.
-  /// Debounce for the "save what I'm looking at" prefetch — fires once the
-  /// camera has been still for [_prefetchIdle]. While the user pans/zooms
-  /// (or follow-me keeps re-centring on GPS) the timer keeps resetting, so
-  /// we never prefetch mid-movement, only after the map settles.
-  Timer? _prefetchTimer;
-  static const _prefetchIdle = Duration(milliseconds: 1500);
+  /// "Weather map" overlay toggle — when on, a simulated weather badge is
+  /// drawn at each RF region centre (no network; see [WeatherSim]).
+  bool _showWeather = false;
 
-  /// Centre of the area we last kicked a prefetch for — used to skip
-  /// re-firing while effectively parked in one spot.
-  LatLng? _lastPrefetchCenter;
+  CachedTileProvider _providerFor(String sourceKey) =>
+      _tileProviders.putIfAbsent(
+        sourceKey,
+        () => CachedTileProvider(sourceKey: sourceKey),
+      );
 
-  CachedTileProvider _baseTileProviderFor(BaseMapStyle style) {
-    final existing = _baseProvider;
-    if (existing != null && _baseProviderStyle == style) return existing;
-    // No dispose of the old one needed: CachedTileProvider owns no
-    // per-instance resources — its HTTP client is shared and long-lived —
-    // so a superseded provider is simply garbage-collected.
-    final provider = CachedTileProvider(sourceKey: style.tileUrl);
-    _baseProvider = provider;
-    _baseProviderStyle = style;
-    return provider;
+  /// Open the "download this area" sheet for the current viewport. The user
+  /// picks which styles to save (schema / satellite / hybrid / …) and a zoom
+  /// range; tiles go straight into the base-map cache (incremental — only
+  /// the missing parts), so switching style offline just shows them. No
+  /// layer is created (see [CacheAreaSheet]).
+  void _downloadVisibleArea() {
+    final style = ref.read(settingsProvider).valueOrNull?.baseMapStyle ??
+        BaseMapStyle.schema;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => CacheAreaSheet(
+        mapController: _map,
+        initialStyle: style,
+      ),
+    );
   }
 
-  /// (Re)arm the idle timer. Called on every camera event; the prefetch
-  /// only runs once movement has actually stopped.
-  void _schedulePrefetch() {
-    _prefetchTimer?.cancel();
-    _prefetchTimer = Timer(_prefetchIdle, _runPrefetchIfNeeded);
-  }
-
-  /// Once the map has settled, download the visible area across the user's
-  /// configured zoom range into the persistent cache — so zooming in here
-  /// offline later is sharp, not an upscale. Honors the master toggle, the
-  /// Wi-Fi-only guard, and a small stationary-dedupe.
-  Future<void> _runPrefetchIfNeeded() async {
-    if (!mounted) return;
-    final s = ref.read(settingsProvider).valueOrNull;
-    if (s == null || !s.tilePrefetchEnabled) return;
-
-    // Which base styles to save offline (map / satellite / hybrid / …).
-    // Deduped to URL templates — satellite & hybrid share one endpoint.
-    final sources = s.tilePrefetchStyles.map((e) => e.tileUrl).toSet().toList();
-    if (sources.isEmpty) return;
-
-    final LatLng center;
-    final LatLngBounds bounds;
-    try {
-      center = _map.camera.center;
-      bounds = _map.camera.visibleBounds;
-    } catch (_) {
-      return; // camera not ready yet
+  void _toggleWeather() {
+    setState(() => _showWeather = !_showWeather);
+    if (_showWeather) {
+      final l10n = AppStrings.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.mapWeatherOn),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
-
-    // Skip if we're basically where we last prefetched (parked / tiny pan).
-    final last = _lastPrefetchCenter;
-    if (last != null &&
-        const Distance().as(LengthUnit.Meter, last, center) < 60) {
-      return;
-    }
-
-    // Wi-Fi-only guard: never spend mobile data unless the user opted in.
-    if (s.tilePrefetchWifiOnly) {
-      try {
-        final conn = await Connectivity().checkConnectivity();
-        final onFreeLink = conn.contains(ConnectivityResult.wifi) ||
-            conn.contains(ConnectivityResult.ethernet);
-        if (!onFreeLink) return;
-      } catch (_) {
-        return; // can't tell → err on the safe side
-      }
-      if (!mounted) return;
-    }
-
-    _lastPrefetchCenter = center;
-    ref.read(tilePrefetchProvider.notifier).request(
-          sources: sources,
-          north: bounds.north,
-          south: bounds.south,
-          west: bounds.west,
-          east: bounds.east,
-          minZoom: s.tilePrefetchMinZoom,
-          maxZoom: s.tilePrefetchMaxZoom,
-        );
   }
 
   @override
@@ -281,7 +238,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _tts.dispose();
     _navTtsTimer?.cancel();
     _uiRefreshTimer?.cancel();
-    _prefetchTimer?.cancel();
     super.dispose();
   }
 
@@ -859,9 +815,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 // doesn't open at Moscow-default when their offline pack
                 // covers e.g. Voronezh.
                 _savePositionDebounced();
-                // Arm the "save what I'm looking at" prefetch — runs only
-                // after the camera settles (see _schedulePrefetch).
-                _schedulePrefetch();
               },
             ),
             children: [
@@ -869,11 +822,21 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 urlTemplate: baseStyle.tileUrl,
                 userAgentPackageName: 'com.chaliy.nav',
                 // Persistent disk cache: tiles browsed online are stored
-                // forever, so the base map keeps working offline for any
-                // area the user has already visited.
-                tileProvider: _baseTileProviderFor(baseStyle),
+                // so the base map keeps working offline for any area the
+                // user has already visited (passive cache — no bulk
+                // downloading; that's the manual "download area" button).
+                tileProvider: _providerFor(baseStyle.tileUrl),
                 maxNativeZoom: 19,
               ),
+              // Hybrid = satellite imagery + a transparent labels/roads
+              // overlay on top. Other styles have no overlay URL.
+              if (baseStyle.labelOverlayUrl != null)
+                TileLayer(
+                  urlTemplate: baseStyle.labelOverlayUrl!,
+                  userAgentPackageName: 'com.chaliy.nav',
+                  tileProvider: _providerFor(baseStyle.labelOverlayUrl!),
+                  maxNativeZoom: 19,
+                ),
               // Stacked user layers (XYZ URL, MBTiles) with per-layer opacity.
               UserLayersStack(layers: userLayers),
               // Active (current) recording path — animated glow + pulsing head.
@@ -890,6 +853,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
               MeasureMapLayer(mapController: _map),
               // Navigation route line — from current location to target.
               _navRouteLayer(location),
+              // Simulated "weather map" — badges at region centres. Drawn
+              // below POIs so user points stay on top.
+              if (_showWeather) WeatherMapLayer(time: DateTime.now()),
               // POI markers — clustered when zoomed out, labelled when zoomed in.
               if (showPoints && points.isNotEmpty)
                 MarkerClusterLayerWidget(
@@ -1058,19 +1024,20 @@ class _MapScreenState extends ConsumerState<MapScreen>
             child: MapScaleBar(controller: _map),
           ),
 
-          // Download mini-indicator — sits just above the scale bar.
+          // Download mini-indicator (region/MBTiles downloads) — just above
+          // the scale bar.
           Positioned(
             left: 12,
             bottom: MediaQuery.of(context).padding.bottom + 48,
             child: const DownloadMiniIndicator(),
           ),
 
-          // Tile-prefetch indicator — shows while the visible area is being
-          // saved to the offline cache. Parked just above the download pill.
+          // Area-into-cache download progress (the map "Download area"
+          // button) — parked just above the region-download pill.
           Positioned(
             left: 12,
             bottom: MediaQuery.of(context).padding.bottom + 84,
-            child: const PrefetchMiniIndicator(),
+            child: const AreaDownloadIndicator(),
           ),
 
           // Active layer opacity slider — left edge, vertical.
@@ -1097,6 +1064,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
             bottom: MediaQuery.of(context).padding.bottom + 100,
             child: MapActionsColumn(
               onLayers: _openLayers,
+              onDownloadArea: _downloadVisibleArea,
+              onWeather: _toggleWeather,
+              weatherActive: _showWeather,
               onCenter: _centerOnMe,
               onRecord: _toggleRecording,
               onAddPoint: _addPointHere,

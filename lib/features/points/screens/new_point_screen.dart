@@ -15,7 +15,9 @@ import '../../../shared/models/geo_point.dart';
 import '../../../shared/models/poi_category.dart';
 import '../../../shared/models/poi_icon_library.dart';
 import '../../../shared/models/point_of_interest.dart';
+import '../../../shared/models/weather.dart';
 import '../../../shared/providers/points_provider.dart';
+import '../../../shared/providers/settings_provider.dart';
 import '../widgets/poi_marker.dart';
 import '../widgets/voice_memo_recorder.dart';
 
@@ -83,6 +85,13 @@ class _NewPointScreenState extends ConsumerState<NewPointScreen> {
       return;
     }
 
+    // If "capture weather" is on, stamp the point with the (simulated)
+    // weather at its location — no network, see WeatherSim.
+    final settings = ref.read(settingsProvider).valueOrNull;
+    final wx = (settings?.captureWeather ?? false)
+        ? WeatherSim.at(widget.coord.lat, widget.coord.lng)
+        : null;
+
     final point = PointOfInterest(
       id: const Uuid().v4(),
       title: title.isEmpty ? _icon.name : title,
@@ -92,7 +101,11 @@ class _NewPointScreenState extends ConsumerState<NewPointScreen> {
       note: _note.text.trim(),
       favorite: _favorite,
       audioPath: _audioPath,
-      meta: PoiMeta(altitude: widget.coord.altitude),
+      meta: PoiMeta(
+        altitude: widget.coord.altitude,
+        weather: wx?.condition.label,
+        temperature: wx?.tempC,
+      ),
     );
     await ref.read(pointsProvider.notifier).add(point);
     if (!mounted) return;

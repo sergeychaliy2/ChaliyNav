@@ -12,12 +12,14 @@ import '../../../core/widgets/glass_card.dart';
 import '../../../shared/models/download_task.dart';
 import '../../../shared/models/map_layer.dart';
 import '../../../shared/models/map_preset.dart';
+import '../../../shared/models/weather.dart';
 import '../../../shared/providers/layers_provider.dart';
 import '../../../shared/services/download_manager.dart';
 import '../../../shared/services/layers_service.dart';
 import '../../../shared/services/raster_importer.dart';
 import '../screens/georeference_screen.dart';
 import 'download_area_sheet.dart';
+import 'weather_map_layer.dart';
 
 /// Full-screen sheet for adding a new map layer: file import, XYZ URL, or preset.
 class ImportLayerSheet extends ConsumerStatefulWidget {
@@ -459,6 +461,15 @@ class _ImportLayerSheetState extends ConsumerState<ImportLayerSheet>
   Widget _presetCard(MapPreset preset) {
     final hasRegion = preset.region != null;
     final downloadStatus = _findDownloadStatus(preset);
+    // Region presets get a (simulated) weather highlight: the card accent
+    // and a temperature badge reflect the current weather at the region's
+    // centre. Purely internal — no network.
+    final r = preset.region;
+    final weather = r == null
+        ? null
+        : WeatherSim.at(
+            (r.northLat + r.southLat) / 2, (r.westLng + r.eastLng) / 2);
+    final accent = weather?.condition.color ?? _categoryColor(preset.category);
     // Is this preset already present as an online layer?
     // (Added via the "+" button below — NOT via a bare card tap like before,
     // which caused phantom layers to linger after a download was cancelled.)
@@ -485,17 +496,17 @@ class _ImportLayerSheetState extends ConsumerState<ImportLayerSheet>
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        _categoryColor(preset.category).withValues(alpha: 0.3),
-                        _categoryColor(preset.category).withValues(alpha: 0.1),
+                        accent.withValues(alpha: 0.3),
+                        accent.withValues(alpha: 0.1),
                       ],
                     ),
                     border: Border.all(
-                      color: _categoryColor(preset.category).withValues(alpha: 0.5),
+                      color: accent.withValues(alpha: 0.5),
                     ),
                   ),
                   child: Icon(
                     _categoryIcon(preset.category),
-                    color: _categoryColor(preset.category),
+                    color: accent,
                     size: 22,
                   ),
                 ),
@@ -546,6 +557,10 @@ class _ImportLayerSheetState extends ConsumerState<ImportLayerSheet>
                     ],
                   ),
                 ),
+                if (weather != null) ...[
+                  const SizedBox(width: 8),
+                  WeatherBadge(weather: weather, dense: true),
+                ],
               ],
             ),
             const SizedBox(height: 10),

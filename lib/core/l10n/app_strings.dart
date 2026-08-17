@@ -127,6 +127,9 @@ class AppStrings {
 
   // Map
   String get mapLayers => t('map.layers');
+  String get mapDownloadArea => t('map.download_area');
+  String get mapWeather => t('map.weather_map');
+  String get mapWeatherOn => t('map.weather_on');
   String get mapMeasure => t('map.measure');
   String get mapCenter => t('map.center');
   String get mapRecord => t('map.record');
@@ -485,6 +488,9 @@ class AppStrings {
       'settings.backup_sub': 'AES-256 + ваш пароль',
       // Map
       'map.layers': 'Слои',
+      'map.download_area': 'Скачать область',
+      'map.weather_map': 'Погода',
+      'map.weather_on': 'Погодная карта включена',
       'map.measure': 'Измерение',
       'map.center': 'Центрировать',
       'map.record': 'Записать трек',
@@ -821,6 +827,9 @@ class AppStrings {
       'settings.backup': 'Encrypted backup',
       'settings.backup_sub': 'AES-256 + your password',
       'map.layers': 'Layers',
+      'map.download_area': 'Download area',
+      'map.weather_map': 'Weather',
+      'map.weather_on': 'Weather map on',
       'map.measure': 'Measure',
       'map.center': 'Center on me',
       'map.record': 'Record track',
@@ -1134,6 +1143,9 @@ class AppStrings {
       'settings.backup': 'Зашыфраваны бэкап',
       'settings.backup_sub': 'AES-256 + ваш пароль',
       'map.layers': 'Пласты',
+      'map.download_area': 'Спампаваць вобласць',
+      'map.weather_map': 'Надвор’е',
+      'map.weather_on': 'Карта надвор’я ўключана',
       'map.measure': 'Вымярэнне',
       'map.center': 'Цэнтраваць',
       'map.record': 'Запісаць трэк',
@@ -1449,6 +1461,9 @@ class AppStrings {
       'settings.backup': 'Зашифрований бекап',
       'settings.backup_sub': 'AES-256 + ваш пароль',
       'map.layers': 'Шари',
+      'map.download_area': 'Завантажити область',
+      'map.weather_map': 'Погода',
+      'map.weather_on': 'Карта погоди увімкнена',
       'map.measure': 'Вимірювання',
       'map.center': 'Центрувати',
       'map.record': 'Записати трек',

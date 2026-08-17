@@ -165,6 +165,37 @@ class TileCacheStore {
     } catch (_) {/* best effort */}
   }
 
+  /// Insert many tiles in ONE transaction. Dramatically faster than calling
+  /// [put] per tile when saving a downloaded area — a single commit/fsync
+  /// for the whole batch instead of one per tile (which is what made
+  /// caching a region feel slow). Best-effort; swallows its own errors.
+  Future<void> putBatch(
+    List<({String source, int z, int x, int y, Uint8List bytes})> tiles,
+  ) async {
+    if (tiles.isEmpty) return;
+    try {
+      final db = await _open();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = db.batch();
+      for (final t in tiles) {
+        if (t.bytes.isEmpty) continue;
+        batch.insert(
+          'tiles',
+          {
+            'source': t.source,
+            'z': t.z,
+            'x': t.x,
+            'y': t.y,
+            'bytes': t.bytes,
+            'fetched_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    } catch (_) {/* best effort */}
+  }
+
   /// Approximate on-disk size of all cached tiles, in bytes (sum of blob
   /// lengths — close enough for a "Кеш: 42 МБ" readout).
   Future<int> sizeBytes() async {

@@ -54,24 +54,6 @@ class AppSettings {
     // Base map
     this.baseMapStyle = BaseMapStyle.schema,
 
-    // Offline tile prefetch — while browsing online, auto-download the
-    // visible area across a zoom range into the persistent cache, so
-    // zooming in offline later isn't a blurry upscale. Wi-Fi-only by
-    // default so it never silently eats mobile data; flip that off for
-    // "download everywhere I look". Range is clamped to 3..19.
-    this.tilePrefetchEnabled = true,
-    this.tilePrefetchWifiOnly = true,
-    this.tilePrefetchMinZoom = 12,
-    this.tilePrefetchMaxZoom = 16,
-    // Which base-map styles to prefetch. Empty = nothing prefetched. The
-    // live cache still always keeps whatever style is on screen. Note
-    // satellite + hybrid resolve to the same Esri imagery URL, so picking
-    // both downloads one set of tiles.
-    this.tilePrefetchStyles = const {
-      BaseMapStyle.schema,
-      BaseMapStyle.satellite,
-    },
-
     // Security
     this.appLockEnabled = false,
     this.biometricLock = false,
@@ -138,13 +120,6 @@ class AppSettings {
   // Base map
   final BaseMapStyle baseMapStyle;
 
-  // Offline tile prefetch
-  final bool tilePrefetchEnabled;
-  final bool tilePrefetchWifiOnly;
-  final int tilePrefetchMinZoom;
-  final int tilePrefetchMaxZoom;
-  final Set<BaseMapStyle> tilePrefetchStyles;
-
   // Security
   final bool appLockEnabled;
   final bool biometricLock;
@@ -191,11 +166,6 @@ class AppSettings {
     bool? voiceMemoOnSave,
     int? autoFollowAfterIdleSec,
     BaseMapStyle? baseMapStyle,
-    bool? tilePrefetchEnabled,
-    bool? tilePrefetchWifiOnly,
-    int? tilePrefetchMinZoom,
-    int? tilePrefetchMaxZoom,
-    Set<BaseMapStyle>? tilePrefetchStyles,
     bool? appLockEnabled,
     bool? biometricLock,
     bool? secretCategoryLocked,
@@ -238,11 +208,6 @@ class AppSettings {
         autoFollowAfterIdleSec:
             autoFollowAfterIdleSec ?? this.autoFollowAfterIdleSec,
         baseMapStyle: baseMapStyle ?? this.baseMapStyle,
-        tilePrefetchEnabled: tilePrefetchEnabled ?? this.tilePrefetchEnabled,
-        tilePrefetchWifiOnly: tilePrefetchWifiOnly ?? this.tilePrefetchWifiOnly,
-        tilePrefetchMinZoom: tilePrefetchMinZoom ?? this.tilePrefetchMinZoom,
-        tilePrefetchMaxZoom: tilePrefetchMaxZoom ?? this.tilePrefetchMaxZoom,
-        tilePrefetchStyles: tilePrefetchStyles ?? this.tilePrefetchStyles,
         appLockEnabled: appLockEnabled ?? this.appLockEnabled,
         biometricLock: biometricLock ?? this.biometricLock,
         secretCategoryLocked: secretCategoryLocked ?? this.secretCategoryLocked,
@@ -261,22 +226,6 @@ class AppSettings {
         recordingNotifShowPoints:
             recordingNotifShowPoints ?? this.recordingNotifShowPoints,
       );
-
-  /// Parse the persisted list of style names back into a set, silently
-  /// dropping any unknown entries. A missing key falls back to the default
-  /// (map + satellite); an explicit empty list is honored as "none".
-  static Set<BaseMapStyle> _parseStyles(dynamic raw) {
-    if (raw is! List) {
-      return const {BaseMapStyle.schema, BaseMapStyle.satellite};
-    }
-    final out = <BaseMapStyle>{};
-    for (final e in raw) {
-      for (final b in BaseMapStyle.values) {
-        if (b.name == e) out.add(b);
-      }
-    }
-    return out;
-  }
 
   Map<String, dynamic> toJson() => {
         'trackMinDistance': trackMinDistance,
@@ -306,11 +255,6 @@ class AppSettings {
         'voiceMemoOnSave': voiceMemoOnSave,
         'autoFollowAfterIdleSec': autoFollowAfterIdleSec,
         'baseMapStyle': baseMapStyle.name,
-        'tilePrefetchEnabled': tilePrefetchEnabled,
-        'tilePrefetchWifiOnly': tilePrefetchWifiOnly,
-        'tilePrefetchMinZoom': tilePrefetchMinZoom,
-        'tilePrefetchMaxZoom': tilePrefetchMaxZoom,
-        'tilePrefetchStyles': tilePrefetchStyles.map((e) => e.name).toList(),
         'appLockEnabled': appLockEnabled,
         'biometricLock': biometricLock,
         'secretCategoryLocked': secretCategoryLocked,
@@ -363,13 +307,6 @@ class AppSettings {
           (b) => b.name == j['baseMapStyle'],
           orElse: () => BaseMapStyle.schema,
         ),
-        tilePrefetchEnabled: j['tilePrefetchEnabled'] as bool? ?? true,
-        tilePrefetchWifiOnly: j['tilePrefetchWifiOnly'] as bool? ?? true,
-        tilePrefetchMinZoom:
-            (j['tilePrefetchMinZoom'] as int? ?? 12).clamp(3, 19),
-        tilePrefetchMaxZoom:
-            (j['tilePrefetchMaxZoom'] as int? ?? 16).clamp(3, 19),
-        tilePrefetchStyles: _parseStyles(j['tilePrefetchStyles']),
         appLockEnabled: j['appLockEnabled'] as bool? ?? false,
         biometricLock: j['biometricLock'] as bool? ?? false,
         secretCategoryLocked: j['secretCategoryLocked'] as bool? ?? false,

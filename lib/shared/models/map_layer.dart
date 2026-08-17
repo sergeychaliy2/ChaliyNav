@@ -336,4 +336,14 @@ extension BaseMapStyleX on BaseMapStyle {
         BaseMapStyle.terrain => '© OpenTopoMap, © OSM',
         BaseMapStyle.dark => '© CARTO, © OSM',
       };
+
+  /// Transparent overlay drawn ON TOP of [tileUrl] — used to turn the
+  /// satellite imagery into a real "hybrid" (imagery + place/road labels).
+  /// Null for every other style (no overlay). The labels come from Esri's
+  /// transparent reference layer, which aligns with World_Imagery.
+  String? get labelOverlayUrl => switch (this) {
+        BaseMapStyle.hybrid =>
+          'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        _ => null,
+      };
 }

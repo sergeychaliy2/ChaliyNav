@@ -355,6 +355,9 @@ class MapActionsColumn extends StatelessWidget {
   const MapActionsColumn({
     super.key,
     required this.onLayers,
+    required this.onDownloadArea,
+    required this.onWeather,
+    required this.weatherActive,
     required this.onCenter,
     required this.onRecord,
     required this.onAddPoint,
@@ -365,6 +368,9 @@ class MapActionsColumn extends StatelessWidget {
   });
 
   final VoidCallback onLayers;
+  final VoidCallback onDownloadArea;
+  final VoidCallback onWeather;
+  final bool weatherActive;
   final VoidCallback onCenter;
   final VoidCallback onRecord;
   final VoidCallback onAddPoint;
@@ -389,6 +395,20 @@ class MapActionsColumn extends StatelessWidget {
           icon: PhosphorIconsDuotone.stack,
           onTap: onLayers,
           tooltip: s.mapLayers,
+        ),
+        const SizedBox(height: 10),
+        _ActionBtn(
+          icon: PhosphorIconsDuotone.downloadSimple,
+          onTap: onDownloadArea,
+          tooltip: s.mapDownloadArea,
+        ),
+        const SizedBox(height: 10),
+        _ActionBtn(
+          icon: PhosphorIconsDuotone.cloudSun,
+          onTap: onWeather,
+          tooltip: s.mapWeather,
+          active: weatherActive,
+          activeColor: AppColors.accentAmber,
         ),
         const SizedBox(height: 10),
         _ActionBtn(
